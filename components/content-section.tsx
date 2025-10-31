@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { VideoCard } from '@/components/video-card';
+import { LazyVideoCard } from '@/components/lazy-video-card';
 import { Movie } from '@/types/movie';
 import { Film, Tv, Sparkles, TrendingUp, Star } from 'lucide-react';
 
@@ -41,7 +41,7 @@ export function ContentSection({ title, movies, onMovieSelect, icon, description
   };
 
   return (
-    <section id={`section-${title.toLowerCase().replace(/\s+/g, '-')}`} className="py-16 mb-12\" aria-labelledby={`heading-${title.toLowerCase().replace(/\s+/g, '-')}`}>
+    <section id={`section-${title.toLowerCase().replace(/\s+/g, '-')}`} className="py-16 mb-12" aria-labelledby={`heading-${title.toLowerCase().replace(/\s+/g, '-')}`}>
       <div className="max-w-7xl mx-auto px-4">
         {/* Section Header */}
         <motion.div
@@ -114,7 +114,7 @@ export function ContentSection({ title, movies, onMovieSelect, icon, description
             )}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-8 md:gap-10 mb-8">
               {paginatedMovies.map((movie, index) => (
-                <VideoCard
+                <LazyVideoCard
                   key={movie.id}
                   movie={movie}
                   onPlay={onMovieSelect}

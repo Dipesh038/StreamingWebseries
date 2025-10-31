@@ -1,13 +1,11 @@
 "use client";
 
-import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { motion } from 'framer-motion';
-import { Play, Sparkles, Zap, Film, Tv, TrendingUp, Star, Search } from 'lucide-react';
-import { VideoPlayer } from '@/components/video-player';
-import { FloatingParticles } from '@/components/floating-particles';
-import { NavigationTabs, TabType } from '@/components/navigation-tabs';
-import { ContentSection } from '@/components/content-section';
+import { useState, useCallback, useEffect } from 'react';
+import { PremiumVideoModal } from '@/components/premium-video-modal';
+import { MovieRow } from '@/components/movie-row';
+import { HeroBanner } from '@/components/hero-banner';
 import { SearchBar } from '@/components/search-bar';
+import { Search, X } from 'lucide-react';
 import { 
   movieDatabase, 
   getMovies, 
@@ -20,60 +18,33 @@ import {
 
 export default function Home() {
   const [selectedMovie, setSelectedMovie] = useState<Movie | null>(null);
-  const [activeTab, setActiveTab] = useState<TabType>('trending');
   const [tmdbMovies, setTmdbMovies] = useState<Movie[]>([]);
   const [loadingMovies, setLoadingMovies] = useState(false);
-  const [tmdbGenres, setTmdbGenres] = useState<{ id: number; name: string; type: 'movie' | 'tv' }[]>([]);
-  const [genreError, setGenreError] = useState<string | null>(null);
-  const [selectedGenre, setSelectedGenre] = useState<number | null>(null);
   const [searchResults, setSearchResults] = useState<Movie[]>([]);
   const [isSearching, setIsSearching] = useState(false);
-  const mainRef = useRef<HTMLElement>(null);
+  const [showSearch, setShowSearch] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
+  
+  // Get featured movie (highest rated)
+  const featuredMovie = getTrendingContent()[0] || movieDatabase[0];
 
   const handleSearch = async (query: string) => {
     if (!query.trim()) {
       setSearchResults([]);
       setIsSearching(false);
+      setHasSearched(false);
       return;
     }
 
+    console.log('Searching for:', query);
     setIsSearching(true);
+    setHasSearched(true);
     try {
-      const apiKey = process.env.NEXT_PUBLIC_TMDB_API_KEY || '10eaebf12c139dadb28a57991cfce1a6';
-      
-      // 1. Search TMDB for movies and TV shows
-      const searchRes = await fetch(`https://api.themoviedb.org/3/search/multi?api_key=${apiKey}&query=${encodeURIComponent(query)}`);
-      const searchData = await searchRes.json();
-      const searchItems = (searchData.results || [])
-        .filter((item: any) => (item.media_type === 'movie' || item.media_type === 'tv') && item.poster_path)
-        .slice(0, 20); // Limit to top 20 results
-
-      // 2. Fetch details to get imdb_id
-      const itemDetailsPromises = searchItems.map(async (item: any) => {
-        const detailRes = await fetch(`https://api.themoviedb.org/3/${item.media_type}/${item.id}?api_key=${apiKey}&append_to_response=external_ids`);
-        const detailData = await detailRes.json();
-        return { ...item, ...detailData };
-      });
-      const itemsWithDetails = await Promise.all(itemDetailsPromises);
-
-      // 3. Map to our app's Movie type (removed availability check for reliability)
-      const availableItems: Movie[] = itemsWithDetails
-        .filter((item: any) => item.external_ids?.imdb_id) // Ensure we have an IMDB ID to play
-        .map((item: any): Movie => ({
-          id: item.id.toString(),
-          title: item.title || item.name,
-          year: item.release_date ? parseInt(item.release_date.slice(0, 4), 10) : (item.first_air_date ? parseInt(item.first_air_date.slice(0, 4), 10) : 0),
-          poster: `https://image.tmdb.org/t/p/w500${item.poster_path}`,
-          genre: (item.genres || []).map((g: any) => g.name),
-          rating: item.vote_average,
-          description: item.overview,
-          imdbId: item.external_ids.imdb_id,
-          type: item.media_type,
-          duration: item.runtime ? `${item.runtime} min` : undefined,
-          seasons: item.number_of_seasons,
-        }));
-
-      setSearchResults(availableItems);
+      const response = await fetch(`/api/search?query=${encodeURIComponent(query)}`);
+      console.log('Search response status:', response.status);
+      const data = await response.json();
+      console.log('Search results:', data.results?.length || 0, 'movies found');
+      setSearchResults(data.results || []);
     } catch (e) {
       console.error("Failed to perform search:", e);
       setSearchResults([]);
@@ -82,93 +53,22 @@ export default function Home() {
     }
   };
 
-  // Scroll to results when searchResults are set
-  useEffect(() => {
-    if (searchResults.length > 0 && mainRef.current) {
-      mainRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [searchResults]);
 
   useEffect(() => {
-    async function fetchAndFilterMovies() {
+    async function fetchPopularMovies() {
       setLoadingMovies(true);
       try {
-        const apiKey = process.env.NEXT_PUBLIC_TMDB_API_KEY || '10eaebf12c139dadb28a57991cfce1a6';
-        
-        // Fetch multiple pages of popular movies
-        const totalPagesToFetch = 5; // Fetch 5 pages = 100 movies
-        let allMovies: any[] = [];
-
-        for (let i = 1; i <= totalPagesToFetch; i++) {
-          const res = await fetch(`https://api.themoviedb.org/3/movie/popular?api_key=${apiKey}&language=en-US&page=${i}`);
-          const data = await res.json();
-          allMovies = [...allMovies, ...(data.results || [])];
-        }
-
-        // Fetch details for each movie to get imdb_id and other info
-        const moviePromises = allMovies.map(async (movie: any) => {
-          const detailRes = await fetch(`https://api.themoviedb.org/3/movie/${movie.id}?api_key=${apiKey}&append_to_response=external_ids`);
-          const detailData = await detailRes.json();
-          return {
-            ...movie,
-            imdb_id: detailData.external_ids?.imdb_id,
-            runtime: detailData.runtime,
-            genres: detailData.genres,
-          };
-        });
-
-        const detailedMovies = await Promise.all(moviePromises);
-
-        const availableMovies: Movie[] = detailedMovies
-          .filter((movie: any) => movie.poster_path && movie.imdb_id)
-          .map((item: any): Movie => ({
-            id: item.id.toString(),
-            title: item.title,
-            year: item.release_date ? parseInt(item.release_date.slice(0, 4), 10) : 0,
-            poster: `https://image.tmdb.org/t/p/w500${item.poster_path}`,
-            genre: (item.genres || []).map((g: any) => g.name),
-            rating: item.vote_average,
-            description: item.overview,
-            imdbId: item.imdb_id,
-            type: 'movie',
-            duration: item.runtime ? `${item.runtime} min` : '',
-          }));
-
-        setTmdbMovies(availableMovies);
-
+        const response = await fetch('/api/movies/popular');
+        const data = await response.json();
+        setTmdbMovies(data.movies || []);
       } catch (e) {
-        console.error("Failed to fetch and filter movies:", e);
+        console.error("Failed to fetch popular movies:", e);
         setTmdbMovies([]);
       } finally {
         setLoadingMovies(false);
       }
     }
-
-    if (activeTab === 'movies') {
-      fetchAndFilterMovies();
-    }
-  }, [activeTab]);
-
-  useEffect(() => {
-    async function fetchGenres() {
-      setGenreError(null);
-      try {
-        const apiKey = process.env.NEXT_PUBLIC_TMDB_API_KEY || '10eaebf12c139dadb28a57991cfce1a6';
-        const [movieRes, tvRes] = await Promise.all([
-          fetch(`https://api.themoviedb.org/3/genre/movie/list?api_key=${apiKey}`),
-          fetch(`https://api.themoviedb.org/3/genre/tv/list?api_key=${apiKey}`)
-        ]);
-        const movieData = await movieRes.json();
-        const tvData = await tvRes.json();
-        const movieGenres = (movieData.genres || []).map((g: any) => ({ ...g, type: 'movie' as const }));
-        const tvGenres = (tvData.genres || []).map((g: any) => ({ ...g, type: 'tv' as const }));
-        setTmdbGenres([...movieGenres, ...tvGenres]);
-      } catch (e) {
-        setGenreError('Failed to fetch genres from TMDB.');
-        setTmdbGenres([]);
-      }
-    }
-    fetchGenres();
+    fetchPopularMovies();
   }, []);
 
   // Remove console logs for production
@@ -182,207 +82,153 @@ export default function Home() {
     setSelectedMovie(null);
   }, []);
 
-  const handleTabChange = useCallback((tab: TabType) => {
-    setActiveTab(tab);
-  }, []);
-
-  // Get content based on active tab
-  const getActiveContent = () => {
-    switch (activeTab) {
-      case 'movies':
-        return tmdbMovies.length > 0 ? tmdbMovies : [];
-      case 'series':
-        return getSeries();
-      case '4k':
-        return get4KContent();
-      case 'top-rated':
-        return getTopRated();
-      case 'trending':
-      default:
-        return getTrendingContent();
-    }
-  };
-
-  const getSectionConfig = (tab: TabType) => {
-    switch (tab) {
-      case 'movies':
-        return {
-          title: 'Movies Collection',
-          icon: <Film className="w-8 h-8 text-cinema-coral" />,
-          description: 'Discover thousands of amazing movies from every genre and era'
-        };
-      case 'series':
-        return {
-          title: 'TV Series',
-          icon: <Tv className="w-8 h-8 text-cinema-teal" />,
-          description: 'Binge-watch the best television series and shows'
-        };
-      case '4k':
-        return {
-          title: '4K Premium',
-          icon: <Sparkles className="w-8 h-8 text-cinema-coral" />,
-          description: 'Ultra high-quality content with exceptional ratings'
-        };
-      case 'top-rated':
-        return {
-          title: 'Top Rated',
-          icon: <Star className="w-8 h-8 text-yellow-400" />,
-          description: 'The highest rated movies and series according to critics and audiences'
-        };
-      case 'trending':
-      default:
-        return {
-          title: 'Trending Now',
-          icon: <TrendingUp className="w-8 h-8 text-cinema-coral" />,
-          description: 'The hottest and most popular content right now'
-        };
-    }
-  };
-
-  // Memoize content and config for performance
-  const activeContent = useMemo(() => getActiveContent(), [activeTab]);
-  const sectionConfig = useMemo(() => getSectionConfig(activeTab), [activeTab]);
 
   return (
-    <>
-      {/* Hero Section */}
-      <section className="relative min-h-screen flex items-center justify-center px-4 py-20" role="banner" aria-label="Hero section">
-        <FloatingParticles />
-        <div className="max-w-6xl mx-auto text-center">
-          {/* Logo/Brand */}
-          <motion.div
-            initial={{ opacity: 0, y: -30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, ease: "easeOut" }}
-            className="mb-8"
-          >
-            <div className="inline-flex items-center space-x-3 glass-card-strong px-6 py-3 rounded-full">
-              <Film className="w-8 h-8 text-cinema-coral" aria-hidden="true" />
-              <span className="text-2xl font-bold text-gradient">Movie Stream</span>
-            </div>
-          </motion.div>
-
-          {/* Search Bar */}
-          <div className="mb-12" role="search" aria-label="Movie and TV show search">
-            <SearchBar onPerformSearch={handleSearch} />
+    <div className="bg-black min-h-screen">
+      {/* Search overlay */}
+      {showSearch && (
+        <div className="fixed inset-0 z-50 bg-black/95 flex items-start justify-center pt-20 px-4">
+          <div className="w-full max-w-2xl">
+            <button
+              onClick={() => {
+                setShowSearch(false);
+                setSearchResults([]);
+                setIsSearching(false);
+                setHasSearched(false);
+              }}
+              className="absolute top-4 right-4 text-white hover:text-gray-300 transition"
+              aria-label="Close search"
+            >
+              <X className="w-6 h-6" />
+            </button>
+            <SearchBar onPerformSearch={(query) => {
+              handleSearch(query);
+            }} />
+            
+            {/* Search Results in overlay */}
+            {isSearching && (
+              <div className="text-center text-white py-10">Searching...</div>
+            )}
+            
+            {!isSearching && hasSearched && searchResults.length === 0 && (
+              <div className="text-center text-gray-400 py-10">
+                <p>No results found. Try searching for a different movie or TV show.</p>
+              </div>
+            )}
+            
+            {searchResults.length > 0 && (
+              <div className="mt-8 max-h-[60vh] overflow-y-auto">
+                <h2 className="text-white text-xl font-bold mb-4">Search Results ({searchResults.length})</h2>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                  {searchResults.map((movie) => (
+                    <div
+                      key={movie.id}
+                      className="cursor-pointer transform hover:scale-105 transition-transform duration-200"
+                      onClick={() => {
+                        handleMovieSelect(movie);
+                        setShowSearch(false);
+                        setSearchResults([]);
+                      }}
+                    >
+                      {movie.poster ? (
+                        <img
+                          src={movie.poster}
+                          alt={movie.title}
+                          className="w-full rounded-lg shadow-lg"
+                        />
+                      ) : (
+                        <div className="w-full aspect-[2/3] bg-gray-800 rounded-lg flex items-center justify-center">
+                          <span className="text-gray-500 text-sm">No Image</span>
+                        </div>
+                      )}
+                      <h3 className="text-white text-sm mt-2 truncate">{movie.title}</h3>
+                      <p className="text-gray-400 text-xs">{movie.year}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
-
-          {/* Hero Title */}
-          <motion.h1
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.2 }}
-            className="text-5xl md:text-7xl font-bold text-cinema-white mb-6 leading-tight"
-          >
-            <h1>
-              Stream Everything
-              <span className="block text-gradient">Beautifully</span>
-            </h1>
-          </motion.h1>
-
-          {/* Hero Subtitle */}
-          <motion.p
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.4 }}
-            className="text-xl md:text-2xl text-cinema-gray mb-8 max-w-3xl mx-auto leading-relaxed"
-          >
-            <p>Experience the future of streaming with our premium platform. 
-            Access over <span className="text-cinema-coral font-bold">{movieDatabase.length.toLocaleString()}+</span> movies and TV shows.
-            </p>
-          </motion.div>
-
-          {/* Stats */}
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.5 }}
-            className="flex flex-wrap justify-center gap-8 mb-12"
-          >
-            <div className="glass-card px-6 py-4 text-center" role="group" aria-label="Movie statistics">
-              <div className="text-2xl font-bold text-cinema-coral">{getMovies().length.toLocaleString()}+</div>
-              <div className="text-cinema-gray">Movies</div>
-            </div>
-            <div className="glass-card px-6 py-4 text-center" role="group" aria-label="TV series statistics">
-              <div className="text-2xl font-bold text-cinema-teal">{getSeries().length.toLocaleString()}+</div>
-              <div className="text-cinema-gray">TV Series</div>
-            </div>
-            <div className="glass-card px-6 py-4 text-center" role="group" aria-label="4K content statistics">
-              <div className="text-2xl font-bold text-cinema-coral">{get4KContent().length.toLocaleString()}+</div>
-              <div className="text-cinema-gray">4K Content</div>
-            </div>
-          </motion.div>
-
-          {/* Hero Features */}
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.6 }}
-            className="flex flex-wrap justify-center gap-6 mb-12"
-          >
-            <div className="flex items-center space-x-2 glass-card px-4 py-2">
-              <Sparkles className="w-5 h-5 text-cinema-teal" aria-hidden="true" />
-              <span className="text-cinema-white">4K Quality</span>
-            </div>
-            <div className="flex items-center space-x-2 glass-card px-4 py-2">
-              <Zap className="w-5 h-5 text-cinema-coral" aria-hidden="true" />
-              <span className="text-cinema-white">Instant Streaming</span>
-            </div>
-            <div className="flex items-center space-x-2 glass-card px-4 py-2">
-              <Play className="w-5 h-5 text-cinema-teal" aria-hidden="true" />
-              <span className="text-cinema-white">No Ads</span>
-            </div>
-          </motion.div>
         </div>
-      </section>
+      )}
 
-      <main ref={mainRef} id="content" className="px-4 md:px-8 pb-20 -mt-32 md:-mt-48 relative z-20 pt-20" role="main">
-        {/* Content Sections */}
-        {isSearching ? (
-          <div className="text-center text-cinema-white py-20" role="status" aria-live="polite">Searching...</div>
-        ) : searchResults.length > 0 ? (
-          <ContentSection
-            title="Search Results"
-            icon={<Search className="w-8 h-8 text-cinema-teal" aria-hidden="true" />}
-            description={`Found ${searchResults.length} results`}
-            movies={searchResults}
+      {/* Header/Navbar */}
+      <header className="fixed top-0 w-full z-40 bg-gradient-to-b from-black/80 to-transparent px-4 md:px-12 py-4">
+        <div className="flex items-center justify-between">
+          <h1 className="text-red-600 text-2xl md:text-3xl font-bold">MOVIESTREAM</h1>
+          <button
+            onClick={() => setShowSearch(true)}
+            className="text-white hover:text-gray-300 transition"
+            aria-label="Search"
+          >
+            <Search className="w-6 h-6" />
+          </button>
+        </div>
+      </header>
+
+      {/* Hero Banner */}
+      <HeroBanner 
+        movie={featuredMovie} 
+        onPlayClick={handleMovieSelect}
+        onInfoClick={handleMovieSelect}
+      />
+
+      {/* Movie Rows - Netflix Style */}
+      {!showSearch && (
+        <>
+          {loadingMovies ? (
+            <div className="text-center text-white py-10">Loading movies...</div>
+          ) : tmdbMovies.length > 0 && (
+            <MovieRow 
+              title="Popular Movies"
+              movies={tmdbMovies.slice(0, 20)}
+              onMovieSelect={handleMovieSelect}
+            />
+          )}
+          
+          <MovieRow 
+            title="Action Movies"
+            movies={movieDatabase.filter(m => 
+              m.genre.includes('Action') && 
+              m.poster && 
+              m.poster.trim() !== '' &&
+              m.poster.trim() !== 'N/A' &&
+              (m.poster.startsWith('https://') || m.poster.startsWith('http://'))
+            ).slice(0, 20)}
             onMovieSelect={handleMovieSelect}
-            isLoading={isSearching}
           />
-        ) : (
-          <>
-            <NavigationTabs onTabChange={handleTabChange} activeTab={activeTab} />
-            <section className="mt-8" aria-label={`${sectionConfig.title} content`}>
-              <ContentSection
-                title={sectionConfig.title}
-                icon={sectionConfig.icon}
-                description={sectionConfig.description}
-                movies={activeContent}
-                onMovieSelect={handleMovieSelect}
-                isLoading={loadingMovies}
-              />
-            </section>
-          </>
-        )}
-      </main>
+          
+          <MovieRow 
+            title="Drama"
+            movies={movieDatabase.filter(m => 
+              m.genre.includes('Drama') && 
+              m.poster && 
+              m.poster.trim() !== '' &&
+              m.poster.trim() !== 'N/A' &&
+              (m.poster.startsWith('https://') || m.poster.startsWith('http://'))
+            ).slice(0, 20)}
+            onMovieSelect={handleMovieSelect}
+          />
+        </>
+      )}
       
-      {/* Video Player Modal */}
+      {/* Premium Video Modal */}
       {selectedMovie && (
-          <VideoPlayer movie={selectedMovie} onClose={handleClosePlayer} />
+        <PremiumVideoModal movie={selectedMovie} onClose={handleClosePlayer} />
       )}
 
       {/* Footer */}
-      <footer className="py-12 px-4 border-t border-cinema-dark text-center" role="contentinfo">
-        <p className="text-cinema-gray mb-2">
-          &copy; {new Date().getFullYear()} Dipesh. All Rights Reserved.
+      <footer className="py-12 px-4 border-t border-gray-800 text-center bg-black">
+        <p className="text-gray-400 mb-2">
+          &copy; {new Date().getFullYear()} MovieStream. All Rights Reserved.
         </p>
-        <p className="text-cinema-gray mb-4">
-          Developed by <a href="https://github.com/Dipesh038" target="_blank" rel="noopener noreferrer" className="text-cinema-teal hover:text-cinema-coral underline">Dipesh</a>
+        <p className="text-gray-400 mb-4">
+          Developed by <a href="https://github.com/Dipesh038" target="_blank" rel="noopener noreferrer" className="text-red-600 hover:text-red-500 underline">Dipesh</a>
         </p>
-        <div className="flex justify-center space-x-4 text-sm text-cinema-gray">
+        <div className="flex justify-center space-x-4 text-sm text-gray-500">
           <span>Built with Next.js & Tailwind CSS</span>
         </div>
       </footer>
-    </>
+    </div>
   );
 }

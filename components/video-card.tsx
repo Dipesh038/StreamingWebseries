@@ -54,24 +54,17 @@ export const VideoCard = memo(function VideoCard({ movie, onPlay, index }: Video
   }, [movie.poster]);
 
   const fetchPosterFromAPI = async () => {
-    if (!movie.imdbId) return; // Can't fetch without an ID
+    if (!movie.imdbId) return;
     try {
-      const apiKey = '10eaebf12c139dadb28a57991cfce1a6';
-      const res = await fetch(`https://api.themoviedb.org/3/find/${movie.imdbId}?api_key=${apiKey}&external_source=imdb_id`);
+      const res = await fetch(`/api/poster?imdbId=${movie.imdbId}&type=${movie.type}`);
       const data = await res.json();
-      let posterPath = null;
-      if (movie.type === 'movie' && data.movie_results && data.movie_results[0]) {
-        posterPath = data.movie_results[0].poster_path;
-      } else if (movie.type === 'tv' && data.tv_results && data.tv_results[0]) {
-        posterPath = data.tv_results[0].poster_path;
-      }
-      if (posterPath) {
-        setPosterUrl(`https://image.tmdb.org/t/p/w500${posterPath}`);
+      if (data.posterUrl) {
+        setPosterUrl(data.posterUrl);
       } else {
-        setPosterUrl(null); // No poster found
+        setPosterUrl(null);
       }
     } catch (e) {
-      setPosterUrl(null); // Error during fetch
+      setPosterUrl(null);
     }
   };
 

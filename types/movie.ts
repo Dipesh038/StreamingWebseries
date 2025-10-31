@@ -210,16 +210,41 @@ const generateMovieDatabase = (): Movie[] => {
 
 export const movieDatabase = generateMovieDatabase();
 
-// Filter functions for different sections
-export const getMovies = () => movieDatabase.filter(item => item.type === 'movie').sort((a, b) => b.year - a.year).slice(0, 50);
-export const getSeries = () => movieDatabase.filter(item => item.type === 'tv').sort((a, b) => b.year - a.year).slice(0, 50);
-export const get4KContent = () => movieDatabase.filter(item => item.quality === '4K');
+// Helper function to check if poster URL is valid
+const hasValidPoster = (item: Movie) => {
+  // Allow all posters that start with http/https (includes TMDB and Unsplash)
+  return item.poster && 
+         item.poster.trim() !== '' && 
+         item.poster.trim() !== 'N/A' &&
+         (item.poster.startsWith('https://') || item.poster.startsWith('http://'));
+};
+
+// Filter functions for different sections - all now filter out invalid posters
+export const getMovies = () => movieDatabase
+  .filter(item => item.type === 'movie' && hasValidPoster(item))
+  .sort((a, b) => b.year - a.year)
+  .slice(0, 50);
+
+export const getSeries = () => movieDatabase
+  .filter(item => item.type === 'tv' && hasValidPoster(item))
+  .sort((a, b) => b.year - a.year)
+  .slice(0, 50);
+
+export const get4KContent = () => movieDatabase
+  .filter(item => item.quality === '4K' && hasValidPoster(item))
+  .slice(0, 50);
+
 export const getTrendingContent = () => movieDatabase
-  .filter(item => item.type === 'movie' && item.rating > 8 && item.poster && item.poster.startsWith('https://image.tmdb.org/t/p/'))
+  .filter(item => item.type === 'movie' && item.rating > 8 && hasValidPoster(item))
   .sort((a, b) => b.rating - a.rating)
   .slice(0, 50);
-export const getTopRated = () => movieDatabase.sort((a, b) => b.rating - a.rating).slice(0, 100);
+
+export const getTopRated = () => movieDatabase
+  .filter(item => hasValidPoster(item))
+  .sort((a, b) => b.rating - a.rating)
+  .slice(0, 100);
+
 export const getTop50WithPoster = () => movieDatabase
-  .filter(item => item.type === 'movie' && item.poster && item.poster.trim() !== '')
+  .filter(item => item.type === 'movie' && hasValidPoster(item))
   .sort((a, b) => b.rating - a.rating)
   .slice(0, 50);
